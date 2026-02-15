@@ -1,0 +1,60 @@
+name: Document Diff
+
+on:
+  pull_request:
+    paths:
+      - '**.docx'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diff:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download docx-review
+        run: |
+          curl -sL https://github.com/henrybloomingdale/docx-review/releases/latest/download/docx-review-darwin-arm64 -o docx-review
+          chmod +x docx-review
+
+      - name: Find changed .docx files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- '*.docx' | head -20)
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate diffs
+        if: steps.changed.outputs.files != ''
+        id: diff
+        run: |
+          COMMENT="## 📄 Document Changes\n\n"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            
+            # Check if file exists in base
+            if git show ${{ github.event.pull_request.base.sha }}:"$file" > /tmp/old.docx 2>/dev/null; then
+              git show ${{ github.sha }}:"$file" > /tmp/new.docx 2>/dev/null || continue
+              DIFF=$(./docx-review --diff /tmp/old.docx /tmp/new.docx 2>/dev/null || echo "Could not diff")
+              COMMENT="${COMMENT}### \`${file}\`\n\n\`\`\`\n${DIFF}\n\`\`\`\n\n"
+            else
+              COMMENT="${COMMENT}### \`${file}\` (new file)\n\n"
+            fi
+          done <<< "${{ steps.changed.outputs.files }}"
+          
+          echo "comment<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$COMMENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post PR comment
+        if: steps.diff.outputs.comment != ''
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: docx-diff
+          message: ${{ steps.diff.outputs.comment }}
