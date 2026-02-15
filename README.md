@@ -18,7 +18,13 @@ Open XML SDK is the gold standard — it's Microsoft's own library for manipulat
 
 ## Quick Start
 
-### Option 1: Native Binary (recommended)
+### Option 1: Homebrew (recommended)
+
+```bash
+brew install henrybloomingdale/tools/docx-review
+```
+
+### Option 2: Native Binary
 
 ```bash
 git clone https://github.com/henrybloomingdale/docx-review.git
@@ -28,7 +34,7 @@ make install    # Builds + installs to /usr/local/bin
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building (`brew install dotnet@8`). The resulting binary is self-contained — no .NET runtime needed to run it.
 
-### Option 2: Docker
+### Option 3: Docker
 
 ```bash
 make docker     # Builds Docker image
@@ -104,6 +110,68 @@ Each comment needs:
 - `anchor` — text in the document to attach the comment to (CommentRangeStart/End markers)
 - `text` — the comment content shown in Word's review pane
 
+## Semantic Diff & Git Integration
+
+Compare two `.docx` files semantically — detects text changes, formatting differences, comment and tracked change modifications, and metadata changes.
+
+### Quick Start
+
+```bash
+# Compare two documents
+docx-review --diff old.docx new.docx
+
+# JSON output for automation
+docx-review --diff old.docx new.docx --json
+
+# Use as a git textconv driver
+docx-review --textconv document.docx
+```
+
+### Git Integration
+
+Track `.docx` changes in git with human-readable diffs:
+
+```bash
+# Print setup instructions
+docx-review --git-setup
+```
+
+This tells you to add to `.gitattributes`:
+```
+*.docx diff=docx
+```
+
+And to `.gitconfig` (global or per-repo):
+```ini
+[diff "docx"]
+    textconv = docx-review --textconv
+```
+
+Now `git diff` and `git log -p` show readable text diffs for Word documents instead of binary gibberish.
+
+### What the Diff Detects
+
+| Category | Details |
+|----------|---------|
+| **Text changes** | Word-level insertions, deletions, and modifications within matched paragraphs |
+| **Formatting** | Bold, italic, underline, strikethrough, font family, font size, color changes |
+| **Comments** | Added, removed, or modified comments (matched by author + anchor text) |
+| **Tracked changes** | Differences in existing tracked changes between versions |
+| **Metadata** | Title, author, description, last modified, revision count |
+| **Structure** | Paragraph additions and removals (LCS-based alignment, Jaccard ≥ 0.5) |
+
+### TextConv Output Format
+
+The `--textconv` driver normalizes documents to readable text:
+
+```
+[B]bold text[/B]  [I]italic[/I]  [U]underlined[/U]
+[-deleted text-]  [+inserted text+]
+/* [Author] comment text */
+| Cell 1 | Cell 2 | Cell 3 |
+[IMG: figure1.png (sha256: abc123...)]
+```
+
 ## CLI Flags
 
 | Flag | Description |
@@ -112,6 +180,11 @@ Each comment needs:
 | `--author <name>` | Reviewer name for tracked changes (overrides manifest `author`) |
 | `--json` | Output results as JSON (for scripting/pipelines) |
 | `--dry-run` | Validate the manifest without modifying the document |
+| `--read` | Extract document content (tracked changes, comments, metadata) |
+| `--diff` | Compare two documents semantically |
+| `--textconv` | Git textconv driver (normalized text output) |
+| `--git-setup` | Print `.gitattributes` and `.gitconfig` setup instructions |
+| `-v`, `--version` | Show version |
 | `-h`, `--help` | Show help |
 
 ## Build Targets
