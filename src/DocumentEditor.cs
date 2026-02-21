@@ -709,57 +709,14 @@ public class DocumentEditor
             new RunProperties(new RunStyle() { Val = "CommentReference" }),
             new AnnotationReferenceMark()
         ));
-
-        string normalized = NormalizeLineEndings(text);
-        int docReviseIdx = normalized.IndexOf("DocRevise", StringComparison.OrdinalIgnoreCase);
-        if (docReviseIdx > 0)
-        {
-            // Force DocRevise note to begin after a blank line for consistent reviewer loop formatting.
-            string before = normalized.Substring(0, docReviseIdx).TrimEnd('\n');
-            string after = normalized.Substring(docReviseIdx).TrimStart('\n');
-            normalized = string.IsNullOrEmpty(before) ? after : before + "\n\n" + after;
-        }
-
-        docReviseIdx = normalized.IndexOf("DocRevise", StringComparison.OrdinalIgnoreCase);
-        if (docReviseIdx >= 0)
-        {
-            AppendTextWithLineBreaks(newPara, normalized.Substring(0, docReviseIdx), false);
-            AppendTextWithLineBreaks(newPara, normalized.Substring(docReviseIdx, "DocRevise".Length), true);
-            AppendTextWithLineBreaks(newPara, normalized.Substring(docReviseIdx + "DocRevise".Length), false);
-        }
-        else
-        {
-            AppendTextWithLineBreaks(newPara, normalized, false);
-        }
+        newPara.Append(new Run(
+            new Text(text) { Space = SpaceProcessingModeValues.Preserve }
+        ));
 
         foreach (var para in comment.Elements<Paragraph>().ToList())
             para.Remove();
         comment.Append(newPara);
     }
-
-    private static void AppendTextWithLineBreaks(Paragraph para, string text, bool bold)
-    {
-        if (string.IsNullOrEmpty(text)) return;
-
-        string[] lines = NormalizeLineEndings(text).Split('\n');
-        for (int i = 0; i < lines.Length; i++)
-        {
-            if (i > 0)
-                para.Append(new Run(new Break()));
-
-            if (lines[i].Length == 0)
-                continue;
-
-            var run = new Run();
-            if (bold)
-                run.Append(new RunProperties(new Bold()));
-            run.Append(new Text(lines[i]) { Space = SpaceProcessingModeValues.Preserve });
-            para.Append(run);
-        }
-    }
-
-    private static string NormalizeLineEndings(string s) =>
-        s.Replace("\r\n", "\n").Replace('\r', '\n');
 
     #endregion
 

@@ -132,7 +132,6 @@ Notes:
 - If `op` is omitted, behavior defaults to add (backward compatible).
 - `id` must match an existing Word comment ID in `comments.xml`.
 - `update` preserves existing comment author/date/initials unless you separately modify them.
-- If update text contains `DocRevise`, the label is rendered bold and starts on a new line block for readability in Word comments.
 
 ## Semantic Diff & Git Integration
 
