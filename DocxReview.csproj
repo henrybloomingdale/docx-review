@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>docx-review</AssemblyName>
     <RootNamespace>DocxReview</RootNamespace>
-    <Version>1.3.1</Version>
+    <Version>1.3.2</Version>
     <Description>CLI tool for adding tracked changes and comments to Word documents using Open XML SDK</Description>
 
     <!-- Single-file self-contained publishing -->
