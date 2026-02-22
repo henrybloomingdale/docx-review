@@ -1,14 +1,14 @@
 bin/
 obj/
+build/
+build-smoke/
 *.user
 *.suo
 .vs/
 *.swp
 *~
 .DS_Store
+CLAUDE.md
 *.docx
 !examples/*.docx
 !templates/*.docx
-build/
-bin/
-obj/
