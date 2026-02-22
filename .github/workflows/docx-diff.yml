@@ -19,7 +19,7 @@ jobs:
 
       - name: Download docx-review
         run: |
-          curl -sL https://github.com/henrybloomingdale/docx-review/releases/latest/download/docx-review-darwin-arm64 -o docx-review
+          curl -sL https://github.com/drpedapati/docx-review/releases/latest/download/docx-review-darwin-arm64 -o docx-review
           chmod +x docx-review
 
       - name: Find changed .docx files
