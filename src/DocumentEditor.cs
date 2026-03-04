@@ -316,29 +316,16 @@ public class DocumentEditor
     {
         foreach (var para in paragraphs)
         {
-            var runs = para.Elements<Run>().ToList();
-            string paraText = string.Join("", runs.SelectMany(r => r.Elements<Text>()).Select(t => t.Text));
+            var (paraText, runMap) = GetAcceptedRuns(para);
             int idx = paraText.IndexOf(find, StringComparison.Ordinal);
             if (idx < 0) continue;
-
-            // Map runs to character positions
-            int charPos = 0;
-            var runMap = new List<(Run run, int start, int end, RunProperties? rPr)>();
-            foreach (var run in runs)
-            {
-                var textEl = run.Elements<Text>().FirstOrDefault();
-                if (textEl != null)
-                {
-                    int len = textEl.Text.Length;
-                    runMap.Add((run, charPos, charPos + len,
-                        run.RunProperties?.CloneNode(true) as RunProperties));
-                    charPos += len;
-                }
-            }
 
             int matchEnd = idx + find.Length;
             var affected = runMap.Where(r => r.start < matchEnd && r.end > idx).ToList();
             if (affected.Count == 0) continue;
+
+            // Skip if any affected run is inside a prior tracked insertion
+            if (affected.Any(r => r.insideIns)) continue;
 
             var rPr = affected[0].rPr;
             var firstAffected = affected.First();
@@ -403,7 +390,7 @@ public class DocumentEditor
                 para.InsertBefore(suffixRun, insertPoint);
             }
 
-            foreach (var (run, _, _, _) in affected)
+            foreach (var (run, _, _, _, _) in affected)
                 run.Remove();
 
             return 1;
@@ -418,28 +405,16 @@ public class DocumentEditor
     {
         foreach (var para in paragraphs)
         {
-            var runs = para.Elements<Run>().ToList();
-            string paraText = string.Join("", runs.SelectMany(r => r.Elements<Text>()).Select(t => t.Text));
+            var (paraText, runMap) = GetAcceptedRuns(para);
             int idx = paraText.IndexOf(find, StringComparison.Ordinal);
             if (idx < 0) continue;
-
-            int charPos = 0;
-            var runMap = new List<(Run run, int start, int end, RunProperties? rPr)>();
-            foreach (var run in runs)
-            {
-                var textEl = run.Elements<Text>().FirstOrDefault();
-                if (textEl != null)
-                {
-                    int len = textEl.Text.Length;
-                    runMap.Add((run, charPos, charPos + len,
-                        run.RunProperties?.CloneNode(true) as RunProperties));
-                    charPos += len;
-                }
-            }
 
             int matchEnd = idx + find.Length;
             var affected = runMap.Where(r => r.start < matchEnd && r.end > idx).ToList();
             if (affected.Count == 0) continue;
+
+            // Skip if any affected run is inside a prior tracked insertion
+            if (affected.Any(r => r.insideIns)) continue;
 
             var rPr = affected[0].rPr;
             var firstAffected = affected.First();
@@ -491,7 +466,7 @@ public class DocumentEditor
                 para.InsertBefore(suffixRun, insertPoint);
             }
 
-            foreach (var (run, _, _, _) in affected)
+            foreach (var (run, _, _, _, _) in affected)
                 run.Remove();
 
             return 1;
@@ -506,29 +481,14 @@ public class DocumentEditor
     {
         foreach (var para in paragraphs)
         {
-            var runs = para.Elements<Run>().ToList();
-            string paraText = string.Join("", runs.SelectMany(r => r.Elements<Text>()).Select(t => t.Text));
+            var (paraText, runMap) = GetAcceptedRuns(para);
             int idx = paraText.IndexOf(anchor, StringComparison.Ordinal);
             if (idx < 0) continue;
-
-            int charPos = 0;
-            var runMap = new List<(Run run, int start, int end, RunProperties? rPr)>();
-            foreach (var run in runs)
-            {
-                var textEl = run.Elements<Text>().FirstOrDefault();
-                if (textEl != null)
-                {
-                    int len = textEl.Text.Length;
-                    runMap.Add((run, charPos, charPos + len,
-                        run.RunProperties?.CloneNode(true) as RunProperties));
-                    charPos += len;
-                }
-            }
 
             int anchorEnd = idx + anchor.Length;
 
             // Find the run that contains the insertion point
-            (Run run, int start, int end, RunProperties? rPr) targetEntry;
+            (Run run, int start, int end, RunProperties? rPr, bool insideIns) targetEntry;
             int splitPos;
 
             if (after)
@@ -541,6 +501,9 @@ public class DocumentEditor
                 targetEntry = runMap.First(r => r.end > idx && r.start <= idx);
                 splitPos = idx;
             }
+
+            // Skip if target run is inside a prior tracked insertion
+            if (targetEntry.insideIns) continue;
 
             var rPr = targetEntry.rPr;
             var targetRun = targetEntry.run;
@@ -722,6 +685,55 @@ public class DocumentEditor
 
     #region Helpers
 
+    /// <summary>
+    /// Build the "accepted" text and run map for a paragraph.
+    /// Includes runs from direct children and InsertedRun (w:ins) elements.
+    /// Excludes content inside DeletedRun (w:del) elements.
+    /// This gives the text as Word displays it after accepting prior tracked changes,
+    /// ensuring correct positions for subsequent find-and-replace operations.
+    /// </summary>
+    private static (string text, List<(Run run, int start, int end, RunProperties? rPr, bool insideIns)> runMap)
+        GetAcceptedRuns(Paragraph para)
+    {
+        var runMap = new List<(Run run, int start, int end, RunProperties? rPr, bool insideIns)>();
+        int charPos = 0;
+
+        foreach (var child in para.ChildElements)
+        {
+            if (child is Run run)
+            {
+                var textEl = run.Elements<Text>().FirstOrDefault();
+                if (textEl != null)
+                {
+                    int len = textEl.Text.Length;
+                    runMap.Add((run, charPos, charPos + len,
+                        run.RunProperties?.CloneNode(true) as RunProperties, false));
+                    charPos += len;
+                }
+            }
+            else if (child is InsertedRun ins)
+            {
+                foreach (var insRun in ins.Elements<Run>())
+                {
+                    var textEl = insRun.Elements<Text>().FirstOrDefault();
+                    if (textEl != null)
+                    {
+                        int len = textEl.Text.Length;
+                        runMap.Add((insRun, charPos, charPos + len,
+                            insRun.RunProperties?.CloneNode(true) as RunProperties, true));
+                        charPos += len;
+                    }
+                }
+            }
+            // DeletedRun (w:del) children are excluded — their text is deleted
+        }
+
+        string text = string.Join("", runMap.Select(r =>
+            r.run.Elements<Text>().FirstOrDefault()?.Text ?? ""));
+
+        return (text, runMap);
+    }
+
     private static void EnsureCommentsPart(WordprocessingDocument doc)
     {
         if (doc.MainDocumentPart!.WordprocessingCommentsPart == null)
@@ -748,8 +760,7 @@ public class DocumentEditor
     {
         foreach (var para in paragraphs)
         {
-            var runs = para.Elements<Run>().ToList();
-            string paraText = string.Join("", runs.SelectMany(r => r.Elements<Text>()).Select(t => t.Text));
+            var (paraText, _) = GetAcceptedRuns(para);
             if (paraText.Contains(text, StringComparison.Ordinal))
                 return true;
         }
