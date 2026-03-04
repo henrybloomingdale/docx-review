@@ -13,6 +13,8 @@ BINARY_NAME  := docx-review
 VERSION      := 1.3.5
 BUILD_DIR    := build
 INSTALL_DIR  := /usr/local/bin
+GH_REPO      := drpedapati/docx-review
+HOMEBREW_TAPS := drpedapati/homebrew-tools drpedapati/homebrew-tap
 
 # Detect current platform
 UNAME_S := $(shell uname -s)
@@ -38,7 +40,14 @@ PUBLISH_FLAGS := -c Release \
   -p:TrimMode=link \
   -p:SuppressTrimAnalysisWarnings=true
 
-.PHONY: build install all docker test test-create test-comment-update clean help
+# Release asset names (must match homebrew formula URLs)
+RELEASE_ASSETS := \
+  $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 \
+  $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 \
+  $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 \
+  $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
+
+.PHONY: build install all docker test test-create test-comment-update clean help release release-assets update-taps
 
 ## build: Build single-file binary for current platform
 build:
@@ -119,6 +128,68 @@ test-create: build
 ## test-comment-update: Integration test for comment update op by ID
 test-comment-update:
 	@bash tests/test-comment-update.sh
+
+## release: Build all platforms, create GitHub release, update Homebrew taps
+release: all release-assets
+	@echo ""
+	@echo "Creating GitHub release v$(VERSION)..."
+	gh release create v$(VERSION) $(RELEASE_ASSETS) \
+		--title "v$(VERSION)" \
+		--notes "Release v$(VERSION)" \
+		--repo $(GH_REPO)
+	@echo "✅ GitHub release v$(VERSION) created"
+	@echo ""
+	@$(MAKE) update-taps
+
+## release-assets: Copy platform binaries with release naming convention
+release-assets:
+	@cp $(BUILD_DIR)/osx-arm64/$(BINARY_NAME)   $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64
+	@cp $(BUILD_DIR)/osx-x64/$(BINARY_NAME)     $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64
+	@cp $(BUILD_DIR)/linux-x64/$(BINARY_NAME)   $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64
+	@cp $(BUILD_DIR)/linux-arm64/$(BINARY_NAME)  $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
+	@echo "Release assets:"
+	@ls -lh $(RELEASE_ASSETS)
+
+## update-taps: Update all Homebrew tap formulas with current version and SHA256s
+update-taps: release-assets
+	@ARM64_SHA=$$(shasum -a 256 $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 | cut -d' ' -f1); \
+	AMD64_SHA=$$(shasum -a 256 $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 | cut -d' ' -f1); \
+	LINUX_AMD64_SHA=$$(shasum -a 256 $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 | cut -d' ' -f1); \
+	LINUX_ARM64_SHA=$$(shasum -a 256 $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 | cut -d' ' -f1); \
+	echo "SHA256 hashes:"; \
+	echo "  darwin-arm64:  $$ARM64_SHA"; \
+	echo "  darwin-amd64:  $$AMD64_SHA"; \
+	echo "  linux-amd64:   $$LINUX_AMD64_SHA"; \
+	echo "  linux-arm64:   $$LINUX_ARM64_SHA"; \
+	echo ""; \
+	for tap in $(HOMEBREW_TAPS); do \
+		echo "→ Updating $$tap..."; \
+		TMPDIR=$$(mktemp -d); \
+		gh repo clone $$tap $$TMPDIR 2>/dev/null; \
+		FORMULA=$$TMPDIR/Formula/$(BINARY_NAME).rb; \
+		if [ ! -f "$$FORMULA" ]; then \
+			echo "  ⚠️  No formula found in $$tap, skipping"; \
+			rm -rf $$TMPDIR; \
+			continue; \
+		fi; \
+		sed -i '' "s/version \"[^\"]*\"/version \"$(VERSION)\"/" $$FORMULA; \
+		sed -i '' "s|download/v[^/]*/|download/v$(VERSION)/|g" $$FORMULA; \
+		sed -i '' "s|docx-review [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*|docx-review $(VERSION)|" $$FORMULA; \
+		darwin_arm64_old=$$(grep -A1 'arm64\|on_arm' $$FORMULA | grep sha256 | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+		darwin_amd64_old=$$(grep -A1 'intel\|on_intel\|CPU.arm' $$FORMULA | grep sha256 | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+		linux_arm64_old=$$(grep -B0 -A3 'on_linux' $$FORMULA | grep -A1 'arm64\|on_arm' | grep sha256 | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+		linux_amd64_old=$$(grep -B0 -A3 'on_linux' $$FORMULA | grep -A1 'intel\|on_intel' | grep sha256 | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
+		if [ -n "$$darwin_arm64_old" ]; then sed -i '' "s/$$darwin_arm64_old/$$ARM64_SHA/" $$FORMULA; fi; \
+		if [ -n "$$darwin_amd64_old" ]; then sed -i '' "s/$$darwin_amd64_old/$$AMD64_SHA/" $$FORMULA; fi; \
+		if [ -n "$$linux_arm64_old" ]; then sed -i '' "s/$$linux_arm64_old/$$LINUX_ARM64_SHA/" $$FORMULA; fi; \
+		if [ -n "$$linux_amd64_old" ]; then sed -i '' "s/$$linux_amd64_old/$$LINUX_AMD64_SHA/" $$FORMULA; fi; \
+		cd $$TMPDIR && git add -A && git commit -m "Update $(BINARY_NAME) to v$(VERSION)" && git push origin main; \
+		cd - > /dev/null; \
+		rm -rf $$TMPDIR; \
+		echo "  ✅ $$tap updated to v$(VERSION)"; \
+	done
+	@echo ""
+	@echo "✅ All Homebrew taps updated. Run: brew update && brew upgrade $(BINARY_NAME)"
 
 ## clean: Remove build artifacts
 clean:
