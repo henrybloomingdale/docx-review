@@ -174,11 +174,19 @@ public class DocumentReader
     }
 
     /// <summary>
-    /// Get plain text from a regular Run element.
+    /// Get text from a regular Run element, emitting \n for &lt;w:br/&gt; line breaks.
     /// </summary>
     private static string GetRunText(Run run)
     {
-        return string.Join("", run.Elements<Text>().Select(t => t.Text));
+        var sb = new System.Text.StringBuilder();
+        foreach (var child in run.ChildElements)
+        {
+            if (child is Text t)
+                sb.Append(t.Text);
+            else if (child is Break)
+                sb.Append('\n');
+        }
+        return sb.ToString();
     }
 
     /// <summary>
@@ -204,15 +212,18 @@ public class DocumentReader
     /// </summary>
     private static string GetInsertedRunText(OpenXmlElement container)
     {
-        var texts = new List<string>();
+        var sb = new System.Text.StringBuilder();
         foreach (var run in container.Elements<Run>())
         {
-            foreach (var t in run.Elements<Text>())
+            foreach (var child in run.ChildElements)
             {
-                texts.Add(t.Text);
+                if (child is Text t)
+                    sb.Append(t.Text);
+                else if (child is Break)
+                    sb.Append('\n');
             }
         }
-        return string.Join("", texts);
+        return sb.ToString();
     }
 
     /// <summary>
@@ -323,7 +334,7 @@ public class DocumentReader
                         // Skip the AnnotationReferenceMark run
                         var runs = p.Elements<Run>()
                             .Where(r => !r.Elements<AnnotationReferenceMark>().Any());
-                        return string.Join("", runs.SelectMany(r => r.Elements<Text>()).Select(t => t.Text));
+                        return string.Join("", runs.Select(r => GetRunText(r)));
                     })
                     .Where(s => !string.IsNullOrEmpty(s)));
 

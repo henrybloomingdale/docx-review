@@ -10,7 +10,7 @@
 #   make clean        # Remove build artifacts
 
 BINARY_NAME  := docx-review
-VERSION      := 1.3.4
+VERSION      := 1.3.5
 BUILD_DIR    := build
 INSTALL_DIR  := /usr/local/bin
 

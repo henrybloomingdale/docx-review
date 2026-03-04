@@ -331,8 +331,8 @@ public class DocumentEditor
             var firstAffected = affected.First();
             string revId = (_revId++).ToString();
 
-            // Use full concatenated text (handles runs with multiple <w:t> elements)
-            string firstFullText = string.Join("", firstAffected.run.Elements<Text>().Select(t => t.Text));
+            // Use full run text including \n for <w:br/> elements
+            string firstFullText = GetFullRunText(firstAffected.run);
             string prefix = "";
             if (idx > firstAffected.start)
             {
@@ -342,7 +342,7 @@ public class DocumentEditor
             var lastAffected = affected.Last();
             string lastFullText = (lastAffected.run == firstAffected.run)
                 ? firstFullText
-                : string.Join("", lastAffected.run.Elements<Text>().Select(t => t.Text));
+                : GetFullRunText(lastAffected.run);
             string suffix = "";
             if (matchEnd < lastAffected.end)
             {
@@ -423,8 +423,8 @@ public class DocumentEditor
             var firstAffected = affected.First();
             string revId = (_revId++).ToString();
 
-            // Use full concatenated text (handles runs with multiple <w:t> elements)
-            string firstFullText = string.Join("", firstAffected.run.Elements<Text>().Select(t => t.Text));
+            // Use full run text including \n for <w:br/> elements
+            string firstFullText = GetFullRunText(firstAffected.run);
             string prefix = "";
             if (idx > firstAffected.start)
             {
@@ -434,7 +434,7 @@ public class DocumentEditor
             var lastAffected = affected.Last();
             string lastFullText = (lastAffected.run == firstAffected.run)
                 ? firstFullText
-                : string.Join("", lastAffected.run.Elements<Text>().Select(t => t.Text));
+                : GetFullRunText(lastAffected.run);
             string suffix = "";
             if (matchEnd < lastAffected.end)
             {
@@ -514,8 +514,8 @@ public class DocumentEditor
             var rPr = targetEntry.rPr;
             var targetRun = targetEntry.run;
 
-            // Concatenate all <w:t> elements (handles runs with <w:br/> between them)
-            string fullText = string.Join("", targetRun.Elements<Text>().Select(t => t.Text));
+            // Include \n for <w:br/> elements so split position is correct
+            string fullText = GetFullRunText(targetRun);
             int localSplit = splitPos - targetEntry.start;
 
             string beforeSplit = fullText.Substring(0, localSplit);
@@ -708,9 +708,9 @@ public class DocumentEditor
         {
             if (child is Run run)
             {
-                // Concatenate ALL <w:t> elements — a run may contain multiple
-                // text nodes separated by <w:br/> or other inline elements.
-                string runText = string.Join("", run.Elements<Text>().Select(t => t.Text));
+                // Include \n for <w:br/> line-break elements so position
+                // calculations account for breaks within a single paragraph.
+                string runText = GetFullRunText(run);
                 if (runText.Length > 0)
                 {
                     runMap.Add((run, charPos, charPos + runText.Length,
@@ -722,7 +722,7 @@ public class DocumentEditor
             {
                 foreach (var insRun in ins.Elements<Run>())
                 {
-                    string runText = string.Join("", insRun.Elements<Text>().Select(t => t.Text));
+                    string runText = GetFullRunText(insRun);
                     if (runText.Length > 0)
                     {
                         runMap.Add((insRun, charPos, charPos + runText.Length,
@@ -734,10 +734,26 @@ public class DocumentEditor
             // DeletedRun (w:del) children are excluded — their text is deleted
         }
 
-        string text = string.Join("", runMap.Select(r =>
-            string.Join("", r.run.Elements<Text>().Select(t => t.Text))));
+        string text = string.Join("", runMap.Select(r => GetFullRunText(r.run)));
 
         return (text, runMap);
+    }
+
+    /// <summary>
+    /// Extract text from a run, emitting \n for &lt;w:br/&gt; line-break elements
+    /// so that line breaks within a single paragraph are preserved in the text view.
+    /// </summary>
+    private static string GetFullRunText(Run run)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var child in run.ChildElements)
+        {
+            if (child is Text t)
+                sb.Append(t.Text);
+            else if (child is Break)
+                sb.Append('\n');
+        }
+        return sb.ToString();
     }
 
     private static void EnsureCommentsPart(WordprocessingDocument doc)

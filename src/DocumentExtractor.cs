@@ -119,7 +119,7 @@ public static class DocumentExtractor
         {
             if (child is Run run)
             {
-                string text = string.Join("", run.Elements<Text>().Select(t => t.Text));
+                string text = GetFullRunText(run);
                 if (text.Length > 0)
                 {
                     textParts.Add(text);
@@ -143,7 +143,7 @@ public static class DocumentExtractor
             }
             else if (child is InsertedRun ins)
             {
-                string insText = string.Join("", ins.Descendants<Text>().Select(t => t.Text));
+                string insText = GetInsertedRunText(ins);
                 if (insText.Length > 0)
                 {
                     textParts.Add(insText);
@@ -359,7 +359,7 @@ public static class DocumentExtractor
                         for (int k = startCi + 1; k < ci; k++)
                         {
                             if (children[k] is Run r)
-                                anchorParts.Add(string.Join("", r.Elements<Text>().Select(t => t.Text)));
+                                anchorParts.Add(GetFullRunText(r));
                         }
                         rangeMap[id] = (string.Join("", anchorParts), pi);
                     }
@@ -375,8 +375,7 @@ public static class DocumentExtractor
                     .Select(p => string.Join("",
                         p.Elements<Run>()
                             .Where(r => !r.Elements<AnnotationReferenceMark>().Any())
-                            .SelectMany(r => r.Elements<Text>())
-                            .Select(t => t.Text)))
+                            .Select(r => GetFullRunText(r))))
                     .Where(s => !string.IsNullOrEmpty(s)));
 
             rangeMap.TryGetValue(id, out var range);
@@ -393,5 +392,34 @@ public static class DocumentExtractor
         }
 
         return comments;
+    }
+
+    private static string GetFullRunText(Run run)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var child in run.ChildElements)
+        {
+            if (child is Text t)
+                sb.Append(t.Text);
+            else if (child is Break)
+                sb.Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    private static string GetInsertedRunText(OpenXmlElement container)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var run in container.Elements<Run>())
+        {
+            foreach (var child in run.ChildElements)
+            {
+                if (child is Text t)
+                    sb.Append(t.Text);
+                else if (child is Break)
+                    sb.Append('\n');
+            }
+        }
+        return sb.ToString();
     }
 }
