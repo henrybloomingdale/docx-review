@@ -23,6 +23,7 @@ class Program
         string? templatePath = null;
         bool showHelp = false;
         bool showVersion = false;
+        bool acceptExisting = true;
         var positionalArgs = new List<string>();
 
         for (int i = 0; i < args.Length; i++)
@@ -63,6 +64,12 @@ class Program
                     break;
                 case "--template":
                     if (i + 1 < args.Length) templatePath = args[++i];
+                    break;
+                case "--accept-existing":
+                    acceptExisting = true;
+                    break;
+                case "--no-accept-existing":
+                    acceptExisting = false;
                     break;
                 case "-h":
                 case "--help":
@@ -321,7 +328,7 @@ class Program
 
         try
         {
-            result = editor.Process(inputPath, outputPath ?? "", manifest, dryRun);
+            result = editor.Process(inputPath, outputPath ?? "", manifest, dryRun, acceptExisting);
         }
         catch (Exception ex)
         {
@@ -372,6 +379,7 @@ Read/Write Options:
   --author <name>        Reviewer name (overrides manifest author)
   --json                 Output results as JSON
   --dry-run              Validate manifest without modifying
+  --no-accept-existing   Preserve existing tracked changes (default: accept them)
   -h, --help             Show this help
 
 JSON Manifest Format:

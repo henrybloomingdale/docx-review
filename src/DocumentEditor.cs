@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -28,7 +29,7 @@ public class DocumentEditor
     /// <summary>
     /// Process a complete edit manifest against a document.
     /// </summary>
-    public ProcessingResult Process(string inputPath, string outputPath, EditManifest manifest, bool dryRun = false)
+    public ProcessingResult Process(string inputPath, string outputPath, EditManifest manifest, bool dryRun = false, bool acceptExisting = true)
     {
         var result = new ProcessingResult
         {
@@ -49,6 +50,12 @@ public class DocumentEditor
         {
             using var doc = WordprocessingDocument.Open(workPath, !dryRun);
             var body = doc.MainDocumentPart!.Document.Body!;
+
+            // Accept all existing tracked changes so that find-and-replace
+            // operates on the same "accepted" text view the LLM was given.
+            if (!dryRun && acceptExisting)
+                AcceptAllTrackedChanges(body);
+
             var paragraphs = body.Elements<Paragraph>().ToList();
 
             // --- Comments first (before tracked changes modify XML) ---
@@ -307,6 +314,50 @@ public class DocumentEditor
 
     #region Core XML Operations
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> _flexRegexCache = new();
+
+    /// <summary>
+    /// Find pattern in text using whitespace-flexible matching.
+    /// Tries exact ordinal match first (fast path). If that fails, treats
+    /// any whitespace run (including NBSP \u00a0) in the pattern as matching
+    /// any whitespace run in the text.
+    /// Returns (index, length, matchedText) or null.
+    /// </summary>
+    private static (int index, int length, string matchedText)? FlexIndexOf(string text, string pattern)
+    {
+        // Fast path: exact ordinal match
+        int exactIdx = text.IndexOf(pattern, StringComparison.Ordinal);
+        if (exactIdx >= 0)
+            return (exactIdx, pattern.Length, pattern);
+
+        // Split pattern into non-whitespace tokens.
+        // string.Split(null) splits on standard .NET whitespace but NOT NBSP,
+        // so we also split on NBSP explicitly.
+        var words = pattern.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 0) return null;
+
+        var tokens = new List<string>();
+        foreach (var w in words)
+        {
+            var parts = w.Split('\u00a0', StringSplitOptions.RemoveEmptyEntries);
+            tokens.AddRange(parts);
+        }
+        if (tokens.Count == 0) return null;
+
+        // Build or retrieve cached regex: literal tokens separated by any whitespace run
+        var regex = _flexRegexCache.GetOrAdd(pattern, _ =>
+        {
+            var escaped = tokens.Select(Regex.Escape);
+            string flexPattern = string.Join(@"[\s\u00a0]+", escaped);
+            return new Regex(flexPattern, RegexOptions.Compiled);
+        });
+
+        var match = regex.Match(text);
+        if (!match.Success) return null;
+
+        return (match.Index, match.Length, match.Value);
+    }
+
     /// <summary>
     /// Replace first occurrence of text with proper tracked changes markup.
     /// Creates w:del (DeletedRun) and w:ins (InsertedRun) elements.
@@ -317,10 +368,11 @@ public class DocumentEditor
         foreach (var para in paragraphs)
         {
             var (paraText, runMap) = GetAcceptedRuns(para);
-            int idx = paraText.IndexOf(find, StringComparison.Ordinal);
-            if (idx < 0) continue;
+            var flexMatch = FlexIndexOf(paraText, find);
+            if (flexMatch == null) continue;
+            var (idx, matchLen, matchedText) = flexMatch.Value;
 
-            int matchEnd = idx + find.Length;
+            int matchEnd = idx + matchLen;
             var affected = runMap.Where(r => r.start < matchEnd && r.end > idx).ToList();
             if (affected.Count == 0) continue;
 
@@ -359,7 +411,7 @@ public class DocumentEditor
                 para.InsertBefore(prefixRun, insertPoint);
             }
 
-            // w:del
+            // w:del — use matchedText (actual document content) not find (normalized)
             var del = new DeletedRun()
             {
                 Author = new StringValue(_author),
@@ -368,7 +420,7 @@ public class DocumentEditor
             };
             var delRun = new Run();
             if (rPr != null) delRun.Append(rPr.CloneNode(true));
-            delRun.Append(new DeletedText(find) { Space = SpaceProcessingModeValues.Preserve });
+            delRun.Append(new DeletedText(matchedText) { Space = SpaceProcessingModeValues.Preserve });
             del.Append(delRun);
             para.InsertBefore(del, insertPoint);
 
@@ -409,10 +461,11 @@ public class DocumentEditor
         foreach (var para in paragraphs)
         {
             var (paraText, runMap) = GetAcceptedRuns(para);
-            int idx = paraText.IndexOf(find, StringComparison.Ordinal);
-            if (idx < 0) continue;
+            var flexMatch = FlexIndexOf(paraText, find);
+            if (flexMatch == null) continue;
+            var (idx, matchLen, matchedText) = flexMatch.Value;
 
-            int matchEnd = idx + find.Length;
+            int matchEnd = idx + matchLen;
             var affected = runMap.Where(r => r.start < matchEnd && r.end > idx).ToList();
             if (affected.Count == 0) continue;
 
@@ -451,7 +504,7 @@ public class DocumentEditor
                 para.InsertBefore(prefixRun, insertPoint);
             }
 
-            // w:del only — no w:ins
+            // w:del only — use matchedText (actual document content) not find (normalized)
             var del = new DeletedRun()
             {
                 Author = new StringValue(_author),
@@ -460,7 +513,7 @@ public class DocumentEditor
             };
             var delRun = new Run();
             if (rPr != null) delRun.Append(rPr.CloneNode(true));
-            delRun.Append(new DeletedText(find) { Space = SpaceProcessingModeValues.Preserve });
+            delRun.Append(new DeletedText(matchedText) { Space = SpaceProcessingModeValues.Preserve });
             del.Append(delRun);
             para.InsertBefore(del, insertPoint);
 
@@ -488,10 +541,11 @@ public class DocumentEditor
         foreach (var para in paragraphs)
         {
             var (paraText, runMap) = GetAcceptedRuns(para);
-            int idx = paraText.IndexOf(anchor, StringComparison.Ordinal);
-            if (idx < 0) continue;
+            var flexMatch = FlexIndexOf(paraText, anchor);
+            if (flexMatch == null) continue;
+            var (idx, matchLen, _) = flexMatch.Value;
 
-            int anchorEnd = idx + anchor.Length;
+            int anchorEnd = idx + matchLen;
 
             // Find the run that contains the insertion point
             (Run run, int start, int end, RunProperties? rPr, bool insideIns) targetEntry;
@@ -566,14 +620,15 @@ public class DocumentEditor
         foreach (var para in paragraphs)
         {
             string pText = para.InnerText;
-            int idx = pText.IndexOf(anchorText, StringComparison.Ordinal);
-            if (idx < 0) continue;
+            var flexMatch = FlexIndexOf(pText, anchorText);
+            if (flexMatch == null) continue;
+            var (idx, matchLen, _) = flexMatch.Value;
 
             var runs = para.Descendants<Run>().ToList();
             int charPos = 0;
             Run? startRun = null;
             Run? endRun = null;
-            int anchorEnd = idx + anchorText.Length;
+            int anchorEnd = idx + matchLen;
 
             foreach (var run in runs)
             {
@@ -783,7 +838,7 @@ public class DocumentEditor
         foreach (var para in paragraphs)
         {
             var (paraText, _) = GetAcceptedRuns(para);
-            if (paraText.Contains(text, StringComparison.Ordinal))
+            if (FlexIndexOf(paraText, text) != null)
                 return true;
         }
         return false;
@@ -793,10 +848,45 @@ public class DocumentEditor
     {
         foreach (var para in paragraphs)
         {
-            if (para.InnerText.Contains(anchor, StringComparison.Ordinal))
+            if (FlexIndexOf(para.InnerText, anchor) != null)
                 return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Accept all existing tracked changes in the document body so that
+    /// subsequent find-and-replace operates on the same text view the reader
+    /// (and therefore the LLM) was given. InsertedRun children are promoted
+    /// to direct paragraph children; DeletedRun elements are removed entirely.
+    /// </summary>
+    private static void AcceptAllTrackedChanges(Body body)
+    {
+        // Accept insertions and move-to: unwrap, promote children to parent level
+        UnwrapElements<InsertedRun>(body);
+        UnwrapElements<MoveToRun>(body);
+
+        // Accept deletions and move-from: remove entirely
+        foreach (var del in body.Descendants<DeletedRun>().ToList())
+            del.Remove();
+        foreach (var mf in body.Descendants<MoveFromRun>().ToList())
+            mf.Remove();
+    }
+
+    private static void UnwrapElements<T>(Body body) where T : OpenXmlElement
+    {
+        foreach (var wrapper in body.Descendants<T>().ToList())
+        {
+            var parent = wrapper.Parent;
+            if (parent == null) continue;
+
+            foreach (var child in wrapper.ChildElements.ToList())
+            {
+                child.Remove();
+                parent.InsertBefore(child, wrapper);
+            }
+            wrapper.Remove();
+        }
     }
 
     private static string CreateTempCopy(string path)
