@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>docx-review</AssemblyName>
     <RootNamespace>DocxReview</RootNamespace>
-    <Version>1.4.1</Version>
+    <Version>1.4.2</Version>
     <Description>CLI tool for adding tracked changes and comments to Word documents using Open XML SDK</Description>
 
     <!-- Single-file self-contained publishing -->
@@ -14,12 +14,8 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- Trimming: reduce binary size -->
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
-
-    <!-- Suppress trim warnings for System.Text.Json (safe — we use source-gen-compatible patterns) -->
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- Trimming disabled: trim-enabled single-file builds were unstable at runtime -->
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />

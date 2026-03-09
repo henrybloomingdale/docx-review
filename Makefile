@@ -10,11 +10,13 @@
 #   make clean        # Remove build artifacts
 
 BINARY_NAME  := docx-review
-VERSION      := 1.4.1
+VERSION      := 1.4.2
 BUILD_DIR    := build
 INSTALL_DIR  := /usr/local/bin
 GH_REPO      := drpedapati/docx-review
 HOMEBREW_TAPS := drpedapati/homebrew-tools drpedapati/homebrew-tap
+RELEASE_TAG  := v$(VERSION)
+PROJECT_VERSION := $(shell sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' DocxReview.csproj | head -1)
 
 # Detect current platform
 UNAME_S := $(shell uname -s)
@@ -36,9 +38,7 @@ PUBLISH_FLAGS := -c Release \
   -p:PublishSingleFile=true \
   -p:EnableCompressionInSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
-  -p:PublishTrimmed=true \
-  -p:TrimMode=link \
-  -p:SuppressTrimAnalysisWarnings=true
+  -p:PublishTrimmed=false
 
 # Release asset names (must match homebrew formula URLs)
 RELEASE_ASSETS := \
@@ -47,13 +47,14 @@ RELEASE_ASSETS := \
   $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 \
   $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64
 
-.PHONY: build install all docker test test-create test-comment-update test-edit-regressions clean help release release-assets update-taps
+.PHONY: build install all docker smoke test test-create test-comment-update test-edit-regressions clean help release release-assets release-preflight update-taps
 
 ## build: Build single-file binary for current platform
 build:
 	@echo "Building $(BINARY_NAME) for $(CURRENT_RID)..."
 	@mkdir -p $(BUILD_DIR)
 	dotnet publish $(PUBLISH_FLAGS) -r $(CURRENT_RID) -o $(BUILD_DIR)/$(CURRENT_RID)
+	@rm -f $(BUILD_DIR)/$(BINARY_NAME)
 	@cp $(BUILD_DIR)/$(CURRENT_RID)/$(BINARY_NAME) $(BUILD_DIR)/$(BINARY_NAME)
 	@echo ""
 	@echo "✅ Built: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -65,6 +66,14 @@ install: build
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)
 	@chmod +x $(INSTALL_DIR)/$(BINARY_NAME)
 	@echo "✅ Installed: $(INSTALL_DIR)/$(BINARY_NAME)"
+
+## smoke: Validate the published local binary can start and create a document
+smoke: build
+	@echo "Running published binary smoke test..."
+	@$(BUILD_DIR)/$(BINARY_NAME) --version
+	@$(BUILD_DIR)/$(BINARY_NAME) --create -o $(BUILD_DIR)/smoke.docx --json >/dev/null
+	@rm -f $(BUILD_DIR)/smoke.docx
+	@echo "✅ Smoke tests passed"
 
 ## uninstall: Remove from /usr/local/bin
 uninstall:
@@ -133,15 +142,62 @@ test-comment-update:
 test-edit-regressions:
 	@bash tests/test-edit-regressions.sh
 
+## release-preflight: Validate repo/tag/version state before cutting a release
+release-preflight:
+	@set -e; \
+		if [ "$(VERSION)" != "$(PROJECT_VERSION)" ]; then \
+			echo "Error: VERSION $(VERSION) does not match DocxReview.csproj version $(PROJECT_VERSION)"; \
+			exit 1; \
+		fi; \
+		if [ "$$(git branch --show-current)" != "main" ]; then \
+			echo "Error: release must be cut from main"; \
+			exit 1; \
+		fi; \
+		if ! git diff --quiet || ! git diff --cached --quiet; then \
+			echo "Error: worktree has uncommitted changes"; \
+			exit 1; \
+		fi; \
+		git fetch origin main --tags >/dev/null; \
+		HEAD_SHA=$$(git rev-parse HEAD); \
+		ORIGIN_MAIN_SHA=$$(git rev-parse origin/main); \
+		if [ "$$HEAD_SHA" != "$$ORIGIN_MAIN_SHA" ]; then \
+			echo "Error: local HEAD is not pushed to origin/main"; \
+			exit 1; \
+		fi; \
+		if ! git rev-parse "$(RELEASE_TAG)^{commit}" >/dev/null 2>&1; then \
+			echo "Error: missing local tag $(RELEASE_TAG)"; \
+			exit 1; \
+		fi; \
+		TAG_SHA=$$(git rev-parse "$(RELEASE_TAG)^{commit}"); \
+		if [ "$$TAG_SHA" != "$$HEAD_SHA" ]; then \
+			echo "Error: local tag $(RELEASE_TAG) does not point to HEAD"; \
+			exit 1; \
+		fi; \
+		REMOTE_TAG_SHA=$$(git ls-remote --tags origin "refs/tags/$(RELEASE_TAG)^{}" | awk '{print $$1}'); \
+		if [ -z "$$REMOTE_TAG_SHA" ]; then \
+			REMOTE_TAG_SHA=$$(git ls-remote --tags origin "refs/tags/$(RELEASE_TAG)" | awk '{print $$1}'); \
+		fi; \
+		if [ -z "$$REMOTE_TAG_SHA" ]; then \
+			echo "Error: remote tag $(RELEASE_TAG) not found on origin"; \
+			exit 1; \
+		fi; \
+		if [ "$$REMOTE_TAG_SHA" != "$$HEAD_SHA" ]; then \
+			echo "Error: remote tag $(RELEASE_TAG) does not point to HEAD"; \
+			exit 1; \
+		fi; \
+		echo "Release preflight passed for $(RELEASE_TAG)"
+
 ## release: Build all platforms, create GitHub release, update Homebrew taps
-release: all release-assets
+release: release-preflight all release-assets
 	@echo ""
-	@echo "Creating GitHub release v$(VERSION)..."
-	gh release create v$(VERSION) $(RELEASE_ASSETS) \
-		--title "v$(VERSION)" \
-		--notes "Release v$(VERSION)" \
+	@echo "Creating GitHub release $(RELEASE_TAG)..."
+	gh release create $(RELEASE_TAG) $(RELEASE_ASSETS) \
+		--verify-tag \
+		--fail-on-no-commits \
+		--title "$(RELEASE_TAG)" \
+		--notes "Release $(RELEASE_TAG)" \
 		--repo $(GH_REPO)
-	@echo "✅ GitHub release v$(VERSION) created"
+	@echo "✅ GitHub release $(RELEASE_TAG) created"
 	@echo ""
 	@$(MAKE) update-taps
 

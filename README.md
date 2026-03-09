@@ -2,7 +2,7 @@
 
 A CLI tool that adds **tracked changes** and **comments** to Word (.docx) documents using Microsoft's [Open XML SDK](https://github.com/dotnet/Open-XML-SDK). Takes a `.docx` file and a JSON edit manifest, produces a reviewed document with proper `w:del`/`w:ins` markup and comment anchors that render natively in Microsoft Word — no macros, no compatibility issues.
 
-**Ships as a single 12MB native binary.** No runtime, no Docker required.
+**Ships as a single native binary.** No runtime, no Docker required.
 
 ## Why Open XML SDK?
 
@@ -215,7 +215,7 @@ The `--textconv` driver normalizes documents to readable text:
 ## Build Targets
 
 ```
-make              # Build native binary for current platform (12MB, self-contained)
+make              # Build native binary for current platform (self-contained)
 make install      # Build + install to /usr/local/bin
 make all          # Cross-compile for macOS ARM64, macOS x64, Linux x64
 make docker       # Build Docker image

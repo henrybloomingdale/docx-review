@@ -2,6 +2,20 @@
 
 All notable changes to docx-review are documented here.
 
+## [1.4.2] - 2026-03-09
+
+### Added
+- `--in-place` / `-i` mode for editing a document via a temp copy and replacing the source only after a fully successful run
+- Multi-paragraph `replace`, `insert_after`, and `insert_before` operations when `replace` or `text` contains `\n`
+- Optional `format` and `style` fields on changes:
+  - `format: "markdown"` parses `**bold**` and `*italic*` into separate inserted runs
+  - `style: "Heading1"` and similar overrides paragraph style on inserted paragraphs
+
+### Fixed
+- In `--in-place` mode, any failed edit now preserves the original source document instead of overwriting it with a partial result
+- Manifests can now chain later edits against paragraphs created earlier in the same run
+- Release builds now ship without trimming because trim-enabled single-file binaries were unstable at runtime
+
 ## [1.4.1] - 2026-03-05
 
 ### Fixed

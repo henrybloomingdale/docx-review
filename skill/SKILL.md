@@ -1,9 +1,9 @@
 ---
 name: docx-review
-description: "Read, edit, create, and diff Word documents (.docx) with tracked changes and comments using the docx-review CLI v1.4.1 — a .NET 8 tool built on Microsoft's Open XML SDK. Ships as a single 12MB native binary (no runtime). Use when: (1) Adding tracked changes (replace, delete, insert) to a .docx, (2) Adding or updating anchored comments to a .docx, (3) Reading/extracting text, tracked changes, comments, and metadata from a .docx, (4) Diffing two .docx files semantically, (5) Creating new documents from templates, (6) Responding to peer reviewer comments with tracked revisions, (7) Proofreading or revising manuscripts with reviewable output, (8) Any task requiring valid tracked-change .docx output with proper w:del/w:ins markup that renders natively in Word."
+description: "Read, edit, create, and diff Word documents (.docx) with tracked changes and comments using the docx-review CLI v1.4.2 — a .NET 8 tool built on Microsoft's Open XML SDK. Ships as a single native binary (no runtime). Use when: (1) Adding tracked changes (replace, delete, insert) to a .docx, (2) Adding or updating anchored comments to a .docx, (3) Reading/extracting text, tracked changes, comments, and metadata from a .docx, (4) Diffing two .docx files semantically, (5) Creating new documents from templates, (6) Responding to peer reviewer comments with tracked revisions, (7) Proofreading or revising manuscripts with reviewable output, (8) Any task requiring valid tracked-change .docx output with proper w:del/w:ins markup that renders natively in Word."
 ---
 
-# docx-review v1.4.1
+# docx-review v1.4.2
 
 CLI tool for Word document review: tracked changes, comments, read, create, diff, and git integration. Built on Microsoft's Open XML SDK — 100% compatible tracked changes and comments.
 
@@ -13,7 +13,7 @@ CLI tool for Word document review: tracked changes, comments, read, create, diff
 brew install drpedapati/tools/docx-review
 ```
 
-Binary: `/opt/homebrew/bin/docx-review` (12MB, self-contained, no runtime)
+Binary: `/opt/homebrew/bin/docx-review` (self-contained, no runtime)
 
 Verify: `docx-review --version`
 
